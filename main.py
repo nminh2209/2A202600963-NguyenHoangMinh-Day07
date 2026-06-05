@@ -42,7 +42,7 @@ def run_manual_demo(question: str | None = None, sample_files: list[str] | None 
     print("\n=== EmbeddingStore Search Test ===")
     print(f"Query: {query}")
     search_results = store.search(query, top_k=3)
-    print(_safe_console_text(format_search_results(search_results)))
+    print(_safe_console_text(format_search_results(search_results, query=query)))
 
     print("\n=== KnowledgeBaseAgent Test ===")
     print(f"Question: {query}")

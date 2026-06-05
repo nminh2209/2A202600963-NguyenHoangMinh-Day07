@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable
 
-from .chunking import RecursiveChunker, SentenceChunker, compute_similarity
+from .chunking import RecursiveChunker, SentenceChunker, compute_similarity, merge_heading_only_chunks
 
 
 @dataclass
@@ -50,7 +50,35 @@ class ParentChildChunker:
                         },
                     )
                 )
+        return _merge_thin_pieces(pieces)
+
+
+def _merge_thin_pieces(pieces: list[ChunkPiece]) -> list[ChunkPiece]:
+    """Merge heading-only or very short chunks with the next piece."""
+    if not pieces:
+        return []
+
+    texts = [piece.content for piece in pieces]
+    merged_texts = merge_heading_only_chunks(texts)
+
+    if len(merged_texts) == len(pieces):
         return pieces
+
+    merged: list[ChunkPiece] = []
+    source_index = 0
+    for merged_text in merged_texts:
+        if source_index < len(pieces) and pieces[source_index].content.strip() == merged_text.strip():
+            merged.append(pieces[source_index])
+            source_index += 1
+            continue
+
+        combined_meta = dict(pieces[min(source_index, len(pieces) - 1)].metadata)
+        if source_index + 1 < len(pieces):
+            combined_meta.update(pieces[source_index + 1].metadata)
+        merged.append(ChunkPiece(content=merged_text, metadata=combined_meta))
+        source_index += 2 if source_index + 1 < len(pieces) else 1
+
+    return merged
 
 
 class DocumentStructureChunker:
@@ -99,7 +127,7 @@ class DocumentStructureChunker:
                         },
                     )
                 )
-        return pieces
+        return _merge_thin_pieces(pieces)
 
 
 class SemanticChunker:

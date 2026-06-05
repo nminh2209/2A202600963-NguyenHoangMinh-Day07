@@ -203,16 +203,41 @@ def build_rag_system(
     return store, agent
 
 
-def format_search_results(results: list[dict], limit: int = 220) -> str:
+def _highlight_query_terms(text: str, query: str) -> str:
+    """Bold query terms in retrieved chunk text for the UI."""
+    import re
+
+    terms = [term for term in re.findall(r"\w+", query.lower()) if len(term) > 2]
+    if not terms:
+        return text
+
+    highlighted = text
+    for term in sorted(set(terms), key=len, reverse=True):
+        pattern = re.compile(re.escape(term), re.IGNORECASE)
+        highlighted = pattern.sub(lambda match: f"**{match.group(0)}**", highlighted)
+    return highlighted
+
+
+def format_search_results(results: list[dict], query: str = "", limit: int = 600) -> str:
     if not results:
         return "_No chunks retrieved._"
 
     lines: list[str] = []
     for index, item in enumerate(results, start=1):
-        source = item.get("metadata", {}).get("source", "unknown")
-        preview = item["content"][:limit].replace("\n", " ")
+        metadata = item.get("metadata", {})
+        source = Path(metadata.get("source", "unknown")).name
+        section_title = metadata.get("section_title")
+        content = item["content"].strip()
+        display = _highlight_query_terms(content[:limit], query)
+        if len(content) > limit:
+            display += "..."
+
+        header = f"**{index}.** score=`{item['score']:.3f}` | `{source}`"
+        if section_title:
+            header += f" | section: `{section_title}`"
+
         lines.append(
-            f"**{index}.** score={item['score']:.3f} | source={source}\n"
-            f"> {preview}{'...' if len(item['content']) > limit else ''}"
+            f"{header}\n\n"
+            f"```md\n{display}\n```"
         )
     return "\n\n".join(lines)

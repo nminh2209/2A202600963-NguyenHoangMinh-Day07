@@ -3,6 +3,33 @@ from __future__ import annotations
 import math
 import re
 
+_HEADING_ONLY = re.compile(r"^#{1,6}\s+\S.+$")
+
+
+def merge_heading_only_chunks(chunks: list[str]) -> list[str]:
+    """
+    Merge markdown heading-only chunks with the following chunk.
+
+    Recursive splitting on paragraph breaks often isolates lines like
+    ``## Section Title`` from their body text — bad for retrieval.
+    """
+    if not chunks:
+        return []
+
+    merged: list[str] = []
+    index = 0
+    while index < len(chunks):
+        current = chunks[index].strip()
+        is_heading_only = bool(_HEADING_ONLY.match(current)) and "\n" not in current
+        if is_heading_only and index + 1 < len(chunks):
+            combined = f"{current}\n\n{chunks[index + 1].strip()}"
+            merged.append(combined)
+            index += 2
+        else:
+            merged.append(chunks[index])
+            index += 1
+    return merged
+
 
 class FixedSizeChunker:
     """
@@ -89,7 +116,7 @@ class RecursiveChunker:
                 text[index : index + self.chunk_size]
                 for index in range(0, len(text), self.chunk_size)
             ]
-        return self._split(text, self.separators)
+        return merge_heading_only_chunks(self._split(text, self.separators))
 
     def _split(self, current_text: str, remaining_separators: list[str]) -> list[str]:
         if len(current_text) <= self.chunk_size:

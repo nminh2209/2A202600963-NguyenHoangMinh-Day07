@@ -76,7 +76,7 @@ def ask(
         _ensure_agent(llm_provider, api_key, strategy_key)
         results = _store.search(question.strip(), top_k=int(top_k))
         answer = _agent.answer(question.strip(), top_k=int(top_k))
-        return answer, format_search_results(results), _backend_label
+        return answer, format_search_results(results, query=question.strip()), _backend_label
     except ValueError as error:
         return str(error), "", _backend_label
     except Exception as error:
@@ -136,6 +136,7 @@ def build_ui() -> gr.Blocks:
                 ["What is the proposed RAG architecture?", 3, default_provider, "", "nam"],
                 ["What customer support topics should be indexed?", 3, default_provider, "", "duy"],
                 ["What are common retrieval failure cases?", 3, default_provider, "", "dung"],
+                ["What is chunking?", 3, default_provider, "", "duy"],
             ],
             inputs=[question, top_k, llm_provider, api_key, strategy],
         )

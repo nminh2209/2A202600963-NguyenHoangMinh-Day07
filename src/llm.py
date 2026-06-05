@@ -50,7 +50,11 @@ def create_llm_fn(
                     "content": (
                         "You are a helpful knowledge assistant. "
                         "Answer only from the provided context. "
-                        "If the context is insufficient, say so clearly."
+                        "Synthesize across chunks when needed. "
+                        "If the context describes related ideas (for example, "
+                        "types or purposes of a concept), explain from those "
+                        "descriptions instead of refusing. "
+                        "Say clearly only when the context truly lacks relevant information."
                     ),
                 },
                 {"role": "user", "content": prompt},
