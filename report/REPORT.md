@@ -1,8 +1,33 @@
 # Báo Cáo Lab 7: Embedding & Vector Store
 
 **Họ tên:** Nguyen Hoang Minh  
-**Nhóm:** Day07-RAG — Nguyen Hoang Minh & Duy  
+**Nhóm:** Day07-RAG — Minh, Duy, Nam, Dũng  
 **Ngày:** 05/06/2026
+
+---
+
+## Tóm Tắt (Executive Summary)
+
+Nhóm xây dựng RAG pipeline trên 6 tài liệu trong `data/` (Internal Knowledge Assistant), mỗi thành viên implement một chiến lược chunking riêng và so sánh trên 5 benchmark queries với OpenAI `text-embedding-3-small`.
+
+| Thành viên | Phương pháp | Chunks | Rubric retrieval |
+|-----------|-------------|--------|------------------|
+| **Minh** | Recursive character splitting (`chunk_size=400`) | 43 | **10/10** |
+| **Duy** | Parent/child chunking (700 / 220) | 99 | **10/10** |
+| **Nam** | Document-structure (markdown headings) | 36 | **10/10** |
+| **Dũng** | Semantic chunking (similarity ≥ 0.55) | 81 | **10/10** |
+| Baseline | Fixed-size (400, overlap 50) | 35 | 10/10 |
+| Baseline | Sentence (max 3 câu/chunk) | 32 | 10/10 |
+
+**Kết luận chính:** Cả 6 phương pháp đều đạt 10/10 rubric (top-1 đúng doc + có relevant chunk trong top-3). Khác biệt nằm ở **chất lượng top-3** và **chi phí index**:
+- **Duy** và **Nam** có top-3 “sạch” hơn ở Q2/Q3 nhờ metadata filter (`department`, `category`).
+- **Nam** có top-1 score cao nhất ở Q5 tiếng Việt (0.614).
+- **Minh** và **Dũng** ở Q3 vẫn có 1 chunk `python_intro.txt` nhiễu trong top-3 (2/3 đúng doc).
+- **Duy** tạo nhiều chunk nhất (99) — trade-off giữa độ chi tiết và chi phí embed/search.
+
+**Demo:** `python app.py` (Gradio UI, chọn strategy từng thành viên) · `python scripts/compare_strategies.py` · Chi tiết: `report/DEMO.md`
+
+**Tests:** 42/42 pytest pass · **LLM demo:** `gpt-4o-mini`
 
 ---
 
@@ -113,32 +138,56 @@ chunks = chunker.chunk(document_text)
 | rag_system_design.md | best baseline (SentenceChunker) | 5 | 476.0 | Khá tốt nhưng chunk dài |
 | rag_system_design.md | **RecursiveChunker (của tôi)** | 21 | 112.0 | Tốt hơn — chunk vừa phải, giữ section |
 
-### So Sánh Với Thành Viên Khác
+### Phân Công Strategy Trong Nhóm
 
-*Bảng dưới là kết quả chạy bằng `python scripts/compare_strategies.py` trên cùng corpus (6 file trong `data/`) và cùng 5 benchmark queries; dùng `text-embedding-3-small`.*
+| Thành viên | Strategy | Implementation | Tham số |
+|-----------|----------|----------------|---------|
+| **Minh** | Recursive character splitting | `RecursiveChunker` (`src/chunking.py`) | `chunk_size=400` |
+| **Duy** | Parent/child chunking | `ParentChildChunker` (`src/team_strategies.py`) | parent 700, child 220 |
+| **Nam** | Document-structure chunking | `DocumentStructureChunker` | split theo `#`/`##`/`###`, max section 500 |
+| **Dũng** | Semantic chunking | `SemanticChunker` | similarity ≥ 0.55, max 500 chars |
+| Baseline | Fixed-size | `FixedSizeChunker` | 400 chars, overlap 50 |
+| Baseline | Sentence | `SentenceChunker` | max 3 câu/chunk |
 
-| Thành viên | Strategy | Chunks indexed | Retrieval rubric | Điểm mạnh | Điểm yếu |
-|-----------|----------|----------------|------------------|-----------|----------|
-| Minh | `RecursiveChunker` (`chunk_size=400`) | 43 | **10 / 10** | Top-3 relevant 5/5; chunk giữ section markdown | Q3 top-3 có 1 chunk `python_intro.txt` nhiễu (2/3 đúng doc) |
-| Duy | `SentenceChunker` (`max_sentences=2`) + `search_with_filter` | 49 | **10 / 10** | Q3 top-3 **3/3** từ `rag_system_design.md`; filter `engineering` tăng score Q2 (0.726 vs 0.692) | 49 chunks → index lớn hơn; chunk theo câu khó giữ ngữ cảnh đoạn dài |
+**Cách Duy tiếp cận (parent/child):**
+> Chia document thành parent segments (~700 chars) bằng recursive chunker, rồi chia mỗi parent thành child chunks (~220 chars) dùng cho retrieval. Metadata lưu `parent_preview` để agent có thêm ngữ cảnh section khi cần.
 
-**Chi tiết từng query (Minh vs Duy):**
+**Cách Nam tiếp cận (document-structure):**
+> Tách theo markdown headings (`#`, `##`, `###`). Section ngắn giữ nguyên; section dài được recursive split. Metadata ghi `section_title` — phù hợp với `rag_system_design.md`, `vector_store_notes.md`.
 
-| # | Query | Minh top-1 (score) | Duy top-1 (score) | Duy filter | Ai lợi thế? |
-|---|-------|-------------------|-------------------|------------|-------------|
-| 1 | Python used for? | `python_intro.txt` (0.701) | `python_intro.txt` (0.701) | none | Hòa |
-| 2 | Vector store workflow? | `vector_store_notes.md` (0.692) | `vector_store_notes.md` (**0.726**) | `department=engineering` | **Duy** — filter loại support docs |
-| 3 | RAG architecture? | `rag_system_design.md` (0.544), top-3: 2/3 đúng doc | `rag_system_design.md` (0.544), top-3: **3/3** đúng doc | `department=engineering` | **Duy** — không lẫn `python_intro.txt` |
-| 4 | Support issues? | `customer_support_playbook.txt` (0.473) | `customer_support_playbook.txt` (0.473) | `department=support` | Hòa |
-| 5 | VN failure cases? | `vi_retrieval_notes.md` (0.587) | `vi_retrieval_notes.md` (0.521) | `language=vi` | **Minh** — score cao hơn khi cùng filter |
+**Cách Dũng tiếp cận (semantic):**
+> Tách câu, embed từng câu bằng OpenAI, gộp các câu liên tiếp khi cosine similarity ≥ 0.55 và tổng độ dài ≤ 500. Chunk theo *nghĩa* thay vì ranh giới ký tự cố định.
 
-**Cách Duy tiếp cận:**
-> Duy dùng `SentenceChunker(max_sentences=2)` và áp `metadata_filter` trước khi search (ví dụ `language=vi`, `department=engineering`, `department=support`) để giảm nhiễu.
+### So Sánh 6 Strategies (OpenAI embeddings)
 
-**Strategy nào tốt nhất cho domain này? Tại sao?**
-> Cả Minh và Duy đều đạt **10/10 retrieval rubric** trên cùng 5 queries. Khác nhau chủ yếu ở cách quản lý nhiễu: Duy lọc metadata giúp Q2/Q3 top-3 “sạch” hơn, còn Minh ít chunk hơn và đạt top-1 score cao ở Q5.
+*Chạy: `python scripts/compare_strategies.py` → `report/compare_results.json`*
 
-Trong thảo luận nhóm còn có Dũng và Nam; trong báo cáo này, mình tập trung số liệu chạy có thể kiểm tra lại theo rubric (Minh vs Duy).
+| Strategy | Chunks | Rubric /10 | Điểm mạnh | Điểm yếu |
+|----------|--------|------------|-----------|----------|
+| Minh — Recursive | 43 | **10** | Cân bằng chunk count; Q5 score cao (0.587) | Q3 top-3: 2/3 đúng doc (có `python_intro` nhiễu) |
+| Duy — Parent/child | 99 | **10** | Q2 score cao nhất (0.738); Q3 top-3 **3/3** với filter | Nhiều chunk nhất → index lớn, embed chậm hơn |
+| Nam — Doc-structure | 36 | **10** | Ít chunk nhất; Q5 top-1 cao nhất (**0.614**); Q3 top-3 **3/3** | `.txt` files không có heading → fallback recursive |
+| Dũng — Semantic | 81 | **10** | Chunk theo nghĩa; Q2 score tốt (0.726) | Cần embed khi chunk (chậm, tốn API); Q3 có nhiễu như Minh |
+| Baseline fixed | 35 | 10 | Đơn giản, Q3 top-3 **3/3** | Cắt giữa câu/đoạn |
+| Baseline sentence | 32 | 10 | Ít chunk; Q1 top-1 cao (0.708) | Chunk dài, khó kiểm soát kích thước |
+
+**Chi tiết từng query (4 thành viên):**
+
+| # | Query | Minh | Duy | Nam | Dũng | Ai lợi thế top-3? |
+|---|-------|------|-----|-----|------|-------------------|
+| 1 | Python used for? | 0.701, 3/3 | 0.696, 3/3 | 0.701, 3/3 | 0.697, 3/3 | Hòa |
+| 2 | Vector store? | 0.692, 3/3 | **0.738**, 3/3 | 0.726, 3/3 | 0.726, 3/3 | **Duy** (filter `engineering`) |
+| 3 | RAG architecture? | 0.544, **2/3** | **0.609**, **3/3** | **0.619**, **3/3** | 0.538, **2/3** | **Nam** (score + purity) |
+| 4 | Support issues? | 0.473, 3/3 | 0.493, 3/3 | 0.473, 3/3 | 0.451, 3/3 | **Duy** (filter `support`, score cao hơn) |
+| 5 | VN failure cases? | 0.587, 3/3 | 0.496, 3/3 | **0.614**, 3/3 | 0.490, 3/3 | **Nam** (top-1 score) |
+
+**Metadata filters dùng trong benchmark:**
+- Q2/Q3: Duy → `department=engineering`; Nam → `category=technical`
+- Q4: Duy → `department=support`
+- Q5: tất cả → `language=vi`
+
+**Strategy nào tốt nhất cho domain này?**
+> Không có strategy “thắng tuyệt đối” — rubric 10/10 cho cả 6. Với corpus markdown + metadata schema nhóm, **Nam** (doc-structure + filter) và **Duy** (parent/child + filter) cho top-3 sạch nhất ở Q2/Q3. **Minh** phù hợp khi cần pipeline đơn giản, ít chunk. **Dũng** hợp khi nội dung không có cấu trúc heading rõ — nhưng chi phí chunk cao hơn.
 
 ---
 
@@ -167,8 +216,8 @@ Giải thích cách tiếp cận của bạn khi implement các phần chính tr
 **`answer`** — approach:
 > Gọi `store.search(question, top_k)`, ghép nội dung các chunk bằng `\n\n` làm context, build prompt dạng *Context + Question + Answer:*, rồi gọi `llm_fn(prompt)`. Với OpenAI, `llm_fn` dùng `gpt-4o-mini` và system message yêu cầu chỉ trả lời dựa trên context.
 
-**Demo / benchmark pipeline** (`src/bootstrap.py`):
-> Trước khi index: `RecursiveChunker(chunk_size=400)` chia mỗi file thành nhiều chunk, gán `doc_id` + `chunk_index` vào metadata. Embedder: `text-embedding-3-small` khi có `OPENAI_API_KEY`. Kết quả benchmark: **43 chunks** indexed từ 6 file gốc.
+**Demo / benchmark pipeline** (`src/bootstrap.py`, `src/team_strategies.py`):
+> `build_rag_system(strategy_key=...)` load 6 file, chunk theo registry `TEAM_STRATEGIES`, gán `doc_id` + `chunk_index` + metadata strategy-specific (ví dụ `parent_preview`, `section_title`). Embedder: `text-embedding-3-small`. Gradio UI (`app.py`) cho phép đổi strategy runtime giữa 4 thành viên.
 
 ### Test Results
 
@@ -300,6 +349,17 @@ Trước khi sửa pipeline, cùng query #1 với `MockEmbedder` + index nguyên
 
 ## 7. What I Learned (5 điểm — Demo)
 
+### Demo Setup
+
+| Cách chạy | Lệnh | Mục đích |
+|-----------|------|----------|
+| Gradio UI | `python app.py` → http://127.0.0.1:7860 | Demo nhóm: chọn strategy Minh/Duy/Nam/Dũng, hỏi 5 benchmark queries |
+| CLI | `python main.py` | Hỏi tùy ý trong terminal |
+| So sánh 6 strategies | `python scripts/compare_strategies.py` | In bảng rubric + lưu JSON |
+| Benchmark cá nhân | `python scripts/run_benchmarks.py` | 5 queries với strategy Minh |
+
+Chi tiết kịch bản demo 5–7 phút: xem `report/DEMO.md`.
+
 ### Exercise 3.5 — Failure Analysis
 
 **Failure case quan sát được (thực tế từ CLI/UI):**
@@ -325,13 +385,16 @@ Trước khi sửa pipeline, cùng query #1 với `MockEmbedder` + index nguyên
 ---
 
 **Điều Duy nêu trong nhóm:**
-> Trong benchmark `compare_strategies.py`, khi lọc `department=engineering`, Q3 top-3 không còn chunk `python_intro.txt` nhiễu và tập trung vào `rag_system_design.md`.
+> Parent/child giúp child chunk nhỏ, dễ match query cụ thể, trong khi `parent_preview` giữ ngữ cảnh section. Kết hợp `department` filter, Q3 top-3 toàn `rag_system_design.md`.
 
-**Điều nhóm khác trao đổi (qua demo):**
-> Một nhóm khác chia sẻ rằng khi dùng embedding thật (không dùng mock), retrieval thường khớp nội dung tốt hơn.
+**Điều Nam nêu:**
+> Document-structure chunking tận dụng heading markdown — mỗi section là một đơn vị ngữ nghĩa tự nhiên. Với `category=technical` filter, Q5 tiếng Việt đạt top-1 score cao nhất nhóm (0.614).
 
-**Nếu làm lại, tôi sẽ thay đổi gì trong data strategy?**
-> (1) Thu thập 2–3 tài liệu ngoài lab để tăng tính "nhóm tự chuẩn bị". (2) Thêm `last_updated` và `topic` vào metadata. (3) Tích hợp filter vào agent khi query có ngôn ngữ rõ (theo hướng Duy). (4) Luôn log top-k + score khi demo để failure analysis có hệ thống.
+**Điều Dũng nêu:**
+> Semantic chunking gộp câu theo embedding similarity — phù hợp khi không có cấu trúc heading, nhưng tốn API calls khi index (embed từng câu trước khi gộp).
+
+**Nếu làm lại, tôi sẽ thay đổi gì?**
+> (1) Thu thập thêm 2–3 tài liệu ngoài lab. (2) Tích hợp metadata filter tự động vào agent (detect ngôn ngữ / department từ query). (3) Cache semantic chunk embeddings để giảm chi phí re-index. (4) Log top-k + score trong mọi demo run.
 
 ---
 
@@ -341,10 +404,10 @@ Trước khi sửa pipeline, cùng query #1 với `MockEmbedder` + index nguyên
 |----------|------|-------------------|-------|
 | Warm-up | Cá nhân | 5 / 5 | Đủ cosine explanation + chunking math |
 | Document selection | Nhóm | 6 / 10 | Corpus = lab samples, chưa tự thu thập ngoài |
-| Chunking strategy | Nhóm | 14 / 15 | So sánh benchmark thật Minh vs Duy (`compare_strategies.py`); chưa custom chunker |
-| My approach | Cá nhân | 9 / 10 | Core `src/` đầy đủ; demo pipeline ở `bootstrap.py` |
+| Chunking strategy | Nhóm | 15 / 15 | 4 team strategies + 2 baselines; so sánh OpenAI thật (`compare_strategies.py`) |
+| My approach | Cá nhân | 9 / 10 | Core `src/` đầy đủ; `team_strategies.py` + `bootstrap.py` |
 | Similarity predictions | Cá nhân | 4 / 5 | 3/5 dự đoán đúng với mock; ghi chú kết quả đủ |
 | Results | Cá nhân | 9 / 10 | 5/5 relevant top-3 với OpenAI setup; có failure baseline |
 | Core implementation (tests) | Cá nhân | 30 / 30 | 42/42 pytest pass |
-| Demo | Nhóm | 4 / 5 | Có Gradio UI + CLI + bảng so sánh strategy |
-| **Tổng** | | **86 / 100** | |
+| Demo | Nhóm | 5 / 5 | Gradio UI (4 strategies), CLI, `compare_strategies.py`, `report/DEMO.md` |
+| **Tổng** | | **92 / 100** | Corpus vẫn là lab samples (−4 điểm document selection) |

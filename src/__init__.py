@@ -6,6 +6,12 @@ from .chunking import (
     SentenceChunker,
     compute_similarity,
 )
+from .team_strategies import (
+    DocumentStructureChunker,
+    ParentChildChunker,
+    SemanticChunker,
+    TEAM_STRATEGIES,
+)
 from .llm import OPENAI_LLM_MODEL, LLM_PROVIDER_ENV, create_llm_fn, demo_llm
 from .embeddings import (
     EMBEDDING_PROVIDER_ENV,
@@ -26,6 +32,10 @@ __all__ = [
     "RecursiveChunker",
     "ChunkingStrategyComparator",
     "compute_similarity",
+    "ParentChildChunker",
+    "DocumentStructureChunker",
+    "SemanticChunker",
+    "TEAM_STRATEGIES",
     "EmbeddingStore",
     "KnowledgeBaseAgent",
     "MockEmbedder",

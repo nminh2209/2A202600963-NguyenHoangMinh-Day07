@@ -1,3 +1,5 @@
+"""Run Minh's strategy benchmark with OpenAI LLM + embeddings."""
+
 import sys
 from pathlib import Path
 
@@ -10,7 +12,11 @@ load_dotenv(ROOT / ".env")
 
 from src.bootstrap import build_rag_system
 
-store, agent = build_rag_system(llm_provider="openai")
+store, agent = build_rag_system(
+    llm_provider="openai",
+    strategy_key="minh",
+    require_openai=True,
+)
 
 print(f"CHUNKS={store.get_collection_size()}")
 print(f"EMBED={getattr(store._embedding_fn, '_backend_name', '?')}")
