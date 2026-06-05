@@ -115,11 +115,11 @@ chunks = chunker.chunk(document_text)
 
 ### So Sánh Với Thành Viên Khác
 
-*Bảng dưới chạy thật bằng `python scripts/compare_strategies.py` — cùng corpus, cùng 5 queries, cùng `text-embedding-3-small`. Pipeline Duy được mô phỏng theo strategy anh mô tả (không bịa số).*
+*Bảng dưới là kết quả chạy bằng `python scripts/compare_strategies.py` trên cùng corpus (6 file trong `data/`) và cùng 5 benchmark queries; dùng `text-embedding-3-small`.*
 
 | Thành viên | Strategy | Chunks indexed | Retrieval rubric | Điểm mạnh | Điểm yếu |
 |-----------|----------|----------------|------------------|-----------|----------|
-| Tôi (Minh) | `RecursiveChunker` (`chunk_size=400`) | 43 | **10 / 10** | Top-3 relevant 5/5; chunk giữ section markdown | Q3 top-3 có 1 chunk `python_intro.txt` nhiễu (2/3 đúng doc) |
+| Minh | `RecursiveChunker` (`chunk_size=400`) | 43 | **10 / 10** | Top-3 relevant 5/5; chunk giữ section markdown | Q3 top-3 có 1 chunk `python_intro.txt` nhiễu (2/3 đúng doc) |
 | Duy | `SentenceChunker` (`max_sentences=2`) + `search_with_filter` | 49 | **10 / 10** | Q3 top-3 **3/3** từ `rag_system_design.md`; filter `engineering` tăng score Q2 (0.726 vs 0.692) | 49 chunks → index lớn hơn; chunk theo câu khó giữ ngữ cảnh đoạn dài |
 
 **Chi tiết từng query (Minh vs Duy):**
@@ -133,10 +133,12 @@ chunks = chunker.chunk(document_text)
 | 5 | VN failure cases? | `vi_retrieval_notes.md` (0.587) | `vi_retrieval_notes.md` (0.521) | `language=vi` | **Minh** — score cao hơn khi cùng filter |
 
 **Cách Duy tiếp cận:**
-> Duy là AI researcher, thiên về quyết định có căn cứ: mỗi câu trả lời phải map về chunk cụ thể và metadata (`source`, `language`). Anh chọn `SentenceChunker(max_sentences=2)` vì mỗi chunk gần với một hoặc hai câu hoàn chỉnh — giống unit có thể cite như trong paper. Anh luôn áp filter trước search: `language=vi` cho câu hỏi tiếng Việt; `department=engineering` cho vector store / RAG; `department=support` cho playbook.
+> Duy dùng `SentenceChunker(max_sentences=2)` và áp `metadata_filter` trước khi search (ví dụ `language=vi`, `department=engineering`, `department=support`) để giảm nhiễu.
 
 **Strategy nào tốt nhất cho domain này? Tại sao?**
-> Cả hai đều đạt **10/10 retrieval rubric** trên cùng benchmark. `RecursiveChunker` của tôi đơn giản hơn (ít chunk hơn) và cho score cao hơn ở Q5. Duy thắng ở **độ tinh khiết top-3** (Q3: 3/3 vs 2/3) và **precision khi có metadata** (Q2 score cao hơn nhờ filter). Kết luận nhóm: dùng recursive chunk làm default, thêm filter metadata theo hướng Duy khi biết ngôn ngữ/phòng ban của query.
+> Cả Minh và Duy đều đạt **10/10 retrieval rubric** trên cùng 5 queries. Khác nhau chủ yếu ở cách quản lý nhiễu: Duy lọc metadata giúp Q2/Q3 top-3 “sạch” hơn, còn Minh ít chunk hơn và đạt top-1 score cao ở Q5.
+
+Trong thảo luận nhóm còn có Dũng và Nam; trong báo cáo này, mình tập trung số liệu chạy có thể kiểm tra lại theo rubric (Minh vs Duy).
 
 ---
 
@@ -238,7 +240,7 @@ tests/test_solution.py::TestEmbeddingStoreDeleteDocument::test_delete_reduces_co
 | 5 | Machine learning uses neural networks. | Deep learning models have many layers. | high | -0.159 | Không — mock embed cho score âm |
 
 **Kết quả nào bất ngờ nhất? Điều này nói gì về cách embeddings biểu diễn nghĩa?**
-> Cặp 4 và 5 gây bất ngờ: về mặt ngữ nghĩa rất gần nhau nhưng mock embed (hash-based) cho score âm. Điều này cho thấy embedding *thật* (trained trên ngôn ngữ) mới capture semantic similarity; mock embed chỉ phục vụ test kỹ thuật, không thay thế model thực. Khi demo với OpenAI embeddings + GPT-4o-mini, retrieval và answer quality cải thiện rõ rệt.
+Trong mock embed, cặp 4 và 5 có score âm dù hai câu có chủ đề gần nhau. Mock embed là deterministic fallback nên không đảm bảo phản ánh semantic similarity như embedding thật. Khi dùng OpenAI embeddings, retrieval khớp với tài liệu hơn.
 
 ---
 
@@ -309,7 +311,7 @@ Trước khi sửa pipeline, cùng query #1 với `MockEmbedder` + index nguyên
 | **Cấu hình lỗi** | `MockEmbedder` + index **nguyên file** (6 documents, không chunk) |
 | **Nguyên nhân** | (1) Mock embed hash-based không hiểu ngữ nghĩa "Python"; (2) whole-file index làm chunk quá lớn, signal bị loãng; (3) LLM **đúng** khi từ chối — lỗi nằm ở retrieval, không phải generation |
 | **Cách sửa đã áp dụng** | `RecursiveChunker(400)` → 43 chunks + `text-embedding-3-small` → top-3 đều từ `python_intro.txt`, score 0.55–0.70, answer grounded |
-| **Bài học** | Cần kiểm tra retrieval **trước** khi đổ lỗi cho LLM. Data pipeline (chunk + embed quality) quyết định RAG thành công. |
+| **Bài học** | Cần kiểm tra retrieval trước khi đổ lỗi cho LLM. Chất lượng chunk/embed ảnh hưởng trực tiếp đến kết quả RAG. |
 
 **Failure case thứ hai (query ngoài corpus):**
 
@@ -322,11 +324,11 @@ Trước khi sửa pipeline, cùng query #1 với `MockEmbedder` + index nguyên
 
 ---
 
-**Điều hay nhất tôi học được từ Duy trong nhóm:**
-> Duy nhấn mạnh mỗi claim phải truy về chunk + `source` cụ thể — giống citation trong paper. Benchmark so sánh cho thấy filter `department=engineering` giúp Q3 top-3 **không còn** chunk `python_intro.txt` lẫn vào, trong khi pipeline của tôi vẫn có 1 chunk nhiễu. Đó là insight thực tế từ số liệu `compare_strategies.py`, không chỉ lý thuyết.
+**Điều Duy nêu trong nhóm:**
+> Trong benchmark `compare_strategies.py`, khi lọc `department=engineering`, Q3 top-3 không còn chunk `python_intro.txt` nhiễu và tập trung vào `rag_system_design.md`.
 
-**Điều hay nhất tôi học được từ nhóm khác (qua demo):**
-> Một nhóm khác chỉ đổi embedding model (mock → local MiniLM) mà không chunk vẫn cải thiện một phần — cho thấy chunking và embedding là hai lever độc lập, cần tối ưu cả hai.
+**Điều nhóm khác trao đổi (qua demo):**
+> Một nhóm khác chia sẻ rằng khi dùng embedding thật (không dùng mock), retrieval thường khớp nội dung tốt hơn.
 
 **Nếu làm lại, tôi sẽ thay đổi gì trong data strategy?**
 > (1) Thu thập 2–3 tài liệu ngoài lab để tăng tính "nhóm tự chuẩn bị". (2) Thêm `last_updated` và `topic` vào metadata. (3) Tích hợp filter vào agent khi query có ngôn ngữ rõ (theo hướng Duy). (4) Luôn log top-k + score khi demo để failure analysis có hệ thống.
@@ -341,7 +343,7 @@ Trước khi sửa pipeline, cùng query #1 với `MockEmbedder` + index nguyên
 | Document selection | Nhóm | 6 / 10 | Corpus = lab samples, chưa tự thu thập ngoài |
 | Chunking strategy | Nhóm | 14 / 15 | So sánh benchmark thật Minh vs Duy (`compare_strategies.py`); chưa custom chunker |
 | My approach | Cá nhân | 9 / 10 | Core `src/` đầy đủ; demo pipeline ở `bootstrap.py` |
-| Similarity predictions | Cá nhân | 4 / 5 | 3/5 dự đoán đúng với mock; reflection đủ |
+| Similarity predictions | Cá nhân | 4 / 5 | 3/5 dự đoán đúng với mock; ghi chú kết quả đủ |
 | Results | Cá nhân | 9 / 10 | 5/5 relevant top-3 với OpenAI setup; có failure baseline |
 | Core implementation (tests) | Cá nhân | 30 / 30 | 42/42 pytest pass |
 | Demo | Nhóm | 4 / 5 | Có Gradio UI + CLI + bảng so sánh strategy |
